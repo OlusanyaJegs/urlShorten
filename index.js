@@ -1,22 +1,27 @@
-const express = require("express");
+const express = require('express');
 const { graphqlHTTP } = require("express-graphql");
 const { buildSchema } = require("graphql");
 const validUrl = require('valid-url');
 const PORT = 4000;
-
-// const urlExists = import('url-exists-nodejs');
-
-const { Database } = require('fakebase');
-const db = new Database('./data');
-const Url = db.table('urls')
+const db = require('./data/urls.json');
 
 const app = express();
+
+const cors = require('cors');
+
+app.use(cors());
 
 const schema = buildSchema(`
     type Url {
         name: String!
         originalUrl: String!,
-        shortenedUrl: String
+        shortUrl: String
+    }
+
+    type UrlFeed {
+        shortId: String,
+        shortenedUrl: String,
+        originalUrl: String
     }
 
     type Query {
@@ -24,40 +29,28 @@ const schema = buildSchema(`
     }
 
     type Mutation {
-        shortenUrl(url: String!): String,
-        originalUrl(id: String!): String
+        shortUrl(url: String): UrlFeed
     }
-    
+
 `);
-
-
-// type ShortUrl {
-//     shortenUrl: String
-// }
-
-// type Mutation {
-//     shortenedUrl(input: shortenedUrlInput!): Url
-// }
-
-// input shortenedUrlInput {
-//     name: String!
-//     originalUrl: String!,
-//     shortenUrl: String
-// }
 
 const urlMap = {};
 
 const rootValue = {
-    shortenUrl: ({ url }) => {
+    shortUrl: ({ url }) => {
 
         if (!validUrl.isUri(url)) {
             throw new Error("This URL is Invalid.");
         }
 
-        const id = (Math.random() + 1).toString(36).substring(6);
-        urlMap[id] = url;
+        const shortId = (Math.random() + 1).toString(36).substring(6);
+        urlMap[shortId] = url;
 
-        return `http://localhost:4000/graphql/${id}`;
+        return {
+            shortId,
+            shortenedUrl: `http://localhost:4000/graphql/${shortId}`,
+            originalUrl: url
+        }
     },
 
     // this takes the id as an argument and returns the original Url associated with it, if it exists.
@@ -75,26 +68,20 @@ const rootValue = {
 
     getUrls: () => Url.findAll(),
 
-    // shortenedUrl: (_root, { input }) => Url.update(input)
 };
 
-app.use("/graphql", graphqlHTTP({
+app.use("/graphiql", graphqlHTTP({
     schema,
     rootValue,
     graphiql: true,
 }));
 
 
-app.get("/:shortUrl", (req, res) => {
-    const { id } = req.params;
-    const url = urlMap[id];
+app.use("/graphql/:shortUrl", async (req, res) => {
+    const { shortUrl } = req.params;
 
-    // check if url to be shortened is valid
-    // if (urlExists) {
-    //     res.redirect(url);
-    // } else {
-    //     res.send("This URL is Invalid.");
-    // }
+    const url = urlMap[shortUrl];
+
     if (url) {
         res.redirect(url);
     } else {
